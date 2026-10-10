@@ -1,0 +1,7 @@
+.DS_Store
+/plan
+/archive
+*.duckdb
+*.duckdb.wal
+__pycache__/
+.venv/
