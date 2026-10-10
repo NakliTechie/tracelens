@@ -69,7 +69,7 @@ def render(rep: dict) -> str:
     out += ["", "## Signals", _table([{"signal": k, "rows": v} for k, v in rep["signals"].items()], ["signal", "rows"])]
     short = lambda rs: [{**r, **{ABBR[s]: r.get(s) or 0 for s in SIGNALS}} for r in rs]
     out += ["", "## By agent and week (week starts Monday, IST)",
-            _table(short(rep["by_agent_week"]), ["week", "agent", "sessions", "tool_calls", *ABBR.values()])]
+            _table([{**r, "week": r["week"] or "(no ts)"} for r in short(rep["by_agent_week"])],["week", "agent", "sessions", "tool_calls", *ABBR.values()])]
     out += ["", "## By project (top by signal rows)",
             _table(short(rep["by_project"]), ["project", "sessions", "tool_calls", *ABBR.values()])]
     for s, rs in rep["top_sessions"].items():
