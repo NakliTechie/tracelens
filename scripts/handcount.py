@@ -9,10 +9,14 @@ HOME=os.environ.get('TRACELENS_HOME', '.')
 A=HOME+'/archive/'
 for rel in open(sys.argv[1]).read().split():
     turns=calls=errs=human=0
+    seen=set(); seen_ids=set()
     for raw in open(A+rel):
         if not raw.strip(): continue
         r=json.loads(raw)
         if rel.startswith('claude'):
+            u=r.get('uuid')
+            if u and u in seen: continue  # replayed after a compaction: count once
+            if u: seen.add(u)
             t=r.get('type')
             if t in('user','assistant','system'): turns+=1
             if t=='system' and r.get('subtype')=='api_error': errs+=1

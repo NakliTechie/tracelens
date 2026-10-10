@@ -35,7 +35,7 @@ def one(con, sql, *p):
 
 def test_row_counts(con):
     assert one(con, "SELECT count(*) FROM sessions") == 3
-    assert one(con, "SELECT count(*) FROM turns WHERE file = ?", CLAUDE) == 47
+    assert one(con, "SELECT count(*) FROM turns WHERE file = ?", CLAUDE) == 48
     assert one(con, "SELECT count(*) FROM turns WHERE file = ?", CLAUDE_SUB) == 2
     assert one(con, "SELECT count(*) FROM turns WHERE file = ?", CODEX) == 5
     assert one(con, "SELECT count(*) FROM tool_calls WHERE file = ?", CLAUDE) == 11

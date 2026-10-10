@@ -90,6 +90,11 @@ claude = [
     cc("user", 150, "ok, next"),                                                   # 46
     cc("assistant", 151, text("It works now.")),                                   # 47 + unverified_claim
     cc("user", 152, "ok, next"),                                                   # 48
+    {"type": "system", "subtype": "compact_boundary", "uuid": "cb1", "isSidechain": False,
+     "sessionId": SID, "timestamp": ts(153), "cwd": CWD},                            # 49 compaction
+    cc("assistant", 2, call("t2", "Bash", {"command": "pytest"})),                  # 50 - replay of 4 (same uuid)
+    cc("user", 2.1, result("t2", "Exit code 1\nFAILED test_x", True)),              # 51 - replay of 5
+    cc("user", 96, "no, that's wrong: test_x still fails"),                         # 52 - replay of 22
 ]
 
 # A subagent transcript of the same session: sidechain turns never count as human.

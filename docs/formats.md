@@ -40,6 +40,8 @@ Exit codes are not a field. A failed Bash result's text starts `Exit code N`; th
 
 Approval waits are not recorded either. The index stores `wait_s` = result timestamp minus call timestamp. A foreground Bash call cannot run past its 10-minute timeout cap, so a long wait on such a call means the session sat on a permission prompt.
 
+After a compaction (`system` record with `subtype: compact_boundary`) Claude Code writes the kept history again with the same `uuid`s. The index keeps the first occurrence of each `uuid`, and of each `tool_use` / `tool_result` id. On 2026-10-10 that removed 19,087 replayed records in 23 files.
+
 A `human` turn is a `user` record that is not sidechain, not meta, not a compact summary, carries no `tool_result`, has non-empty text, and does not start with `<` (slash-command echoes, task notifications, local command output).
 
 ## Codex — `~/.codex/sessions/YYYY/MM/DD/rollout-<ts>-<thread-id>.jsonl`
@@ -78,7 +80,7 @@ All rows carry `file` (archive-relative path) and `line` (1-based, as `sed -n Np
 | Table | Grain |
 |---|---|
 | `sessions` | one JSONL file |
-| `turns` | one message record (Claude user/assistant/system; Codex user/agent/reasoning item) |
+| `turns` | one message record, replays dropped (Claude user/assistant/system; Codex user/agent/reasoning item) |
 | `tool_calls` | one tool call (Codex: one per patched path) with its result |
 | `file_reads` | one file read (Claude `Read`, Codex `parsed_cmd` read) |
 | `errors` | failed tool calls, API errors, aborted turns |

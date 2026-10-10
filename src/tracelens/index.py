@@ -86,6 +86,12 @@ SELECT *,
   END AS text,
   CASE WHEN json_type(content) = 'ARRAY' THEN json_extract_string(content, '$[*].type') END AS block_types
 FROM c WHERE type IN ('user', 'assistant', 'system');
+
+-- After a compaction Claude Code writes the kept history again under the same uuids.
+-- Keep the first occurrence of each message so turns and tool calls count once.
+DELETE FROM ct WHERE uuid IS NOT NULL AND (file, line) IN (
+  SELECT file, line FROM (SELECT file, line, row_number() OVER (PARTITION BY file, uuid ORDER BY line) AS k
+                          FROM ct WHERE uuid IS NOT NULL) WHERE k > 1);
 """
 
 CLAUDE_INSERT = f"""
@@ -107,7 +113,8 @@ CREATE OR REPLACE TEMP TABLE cu AS
 SELECT file, line, ts, session_id, b ->> 'id' AS call_id, b ->> 'name' AS tool, b -> 'input' AS input
 FROM (SELECT file, line, ts, session_id, unnest(json_extract(content, '$[*]')) AS b
       FROM ct WHERE type = 'assistant' AND list_contains(block_types, 'tool_use'))
-WHERE b ->> 'type' = 'tool_use';
+WHERE b ->> 'type' = 'tool_use'
+QUALIFY row_number() OVER (PARTITION BY file, b ->> 'id' ORDER BY line) = 1;
 
 CREATE OR REPLACE TEMP TABLE cr AS
 SELECT file, line, ts, result_type, b ->> 'tool_use_id' AS call_id,
@@ -118,7 +125,8 @@ SELECT file, line, ts, result_type, b ->> 'tool_use_id' AS call_id,
   END AS error_text
 FROM (SELECT file, line, ts, result_type, unnest(json_extract(content, '$[*]')) AS b
       FROM ct WHERE type = 'user' AND list_contains(block_types, 'tool_result'))
-WHERE b ->> 'type' = 'tool_result';
+WHERE b ->> 'type' = 'tool_result'
+QUALIFY row_number() OVER (PARTITION BY file, b ->> 'tool_use_id' ORDER BY line) = 1;
 
 INSERT INTO tool_calls
 SELECT 'claude', u.file, u.line, u.ts, u.session_id, u.call_id, u.tool,
