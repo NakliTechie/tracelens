@@ -16,6 +16,10 @@ STALL_S = 20 * 60
 # questions to the user, plan review. A foreground Bash call cannot run past
 # its 10-minute timeout cap, and a backgrounded one returns its task id at once,
 # so Bash stays in scope either way.
+EDIT_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit", "apply_patch")
+# Commands whose exit 1 means "different" or "no match", not a failure.
+DIFF_LIKE = r"^\s*(git\s+diff|diff|grep|rg|cmp|test|\[)(\s|$)"
+
 LONG_TOOLS = ("Agent", "Task", "TaskOutput", "Monitor", "Workflow", "AskUserQuestion",
               "ExitPlanMode", "ScheduleWakeup", "SendMessage", "Skill")
 
@@ -25,15 +29,28 @@ RESERVED = (r"(?i)\b(done|complete|completed|fixed|resolved|passing|passes|green
 # What counts as a verifier pointer: an exit code, a pass count, a path:line,
 # an explicit evidence line, a backticked command with its result, a link to a
 # local file (an artifact path), a test/suite count, "N of M", "by `cmd`", a
-# backticked commit hash.
-POINTER = (r"(?i)(exit(\s+code)?\s*[:=]?\s*\d|\b\d+\s*/\s*\d+\b|\b\d+\s+(tests?\s+)?(passed|failed|passing)\b|"
-           r"[\w./-]+\.\w+:\d+|evidence:|`[^`]+`\s*(passes|passed|green|clean|exits?|returns?|->|→)|"
-           r"\]\((/|~|\.{1,2}/|[\w-]+/)[^)\s]+\))|\b\d+\s+(tests?|suites?|checks?|specs?)\b|\b\d+ of \d+\b|"
-           r"\b(by|via|per) `[^`]+`|`[0-9a-f]{7,40}`")
+# backticked commit hash, a commit after "@" or "commit", a URL, a file path.
+_POINTERS = [
+    r"exit(\s+code)?\s*[:=]?\s*\d",                      # exit code 0
+    r"\b\d+\s*/\s*\d+\b", r"\b\d+ of \d+\b",              # 12/12, 50 of 50
+    r"\b\d+\s+(tests?\s+)?(passed|failed|passing)\b",       # 8 passed
+    r"\b\d+\s+(tests?|suites?|checks?|specs?)\b",            # 733 tests
+    r"[\w./-]+\.\w+:\d+",                                  # path:line
+    r"evidence:",
+    r"`[^`]+`\s*(passes|passed|green|clean|exits?|returns?|->|→)",  # `cmd` passes
+    r"\]\((/|~|\.{1,2}/|[\w-]+/)[^)\s]+\)",                # [x](local/path)
+    r"\b(by|via|per) `[^`]+`",                               # by `df`
+    r"`[0-9a-f]{7,40}`", r"(@\s*|\bcommit\s+)[0-9a-f]{7,40}\b",  # commit hashes
+    r"https?://\S+",                                         # a URL
+    r"\b[\w.-]+/[\w./-]*\.[a-z]{1,6}\b",                     # a file path
+]
+POINTER = "(?i)(" + "|".join(_POINTERS) + ")"
 # Phrases that use a reserved word without claiming success.
 NOT_A_CLAIM = (r"(?i)\b(working (tree|directory|dir|copy)|safe to|is it (done|working)|not (yet )?(done|verified|fixed|working)|"
                r"when (it'?s|it is|that'?s|you'?re) done|want (that|it) done|how it works|green (\*\*)?[\w ]{0,20}button|"
-               r"done/stop|done or paused)\b")
+               r"done/stop|done or paused|to complete|needs? to be (done|fixed|verified))\b")
+# Headless permission probes (`claude -p` harnesses) are not sessions to judge.
+PROBE_PROMPT = r"^(Call the Bash tool exactly once|Use the Edit tool exactly once)"
 
 # A leading "no" or a bare "stop." pushes back; "no need", "no luck", "no, that's fine"
 # and "stop ollama" do not. Explicit markers count anywhere in the turn.
@@ -54,16 +71,26 @@ CREATE OR REPLACE TABLE signals (
   signal VARCHAR, agent VARCHAR, session_id VARCHAR, project VARCHAR, file VARCHAR,
   line INTEGER, ts TIMESTAMPTZ, detail VARCHAR);
 
--- 1. Same tool, same input, failing again in the same session. One row per
---    repeated (tool, input) group, cited at the first repeat.
+-- 1. Same tool, same input, failing again in the same session with no edit in
+--    between (a test-fix-rerun loop is not a blind retry). Exit 130 (interrupted)
+--    and exit 1 from diff/grep-style commands (meaning "different" or "no match")
+--    are not failures here. One row per (tool, input) group, cited at the first
+--    blind repeat.
 INSERT INTO signals
-SELECT 'repeated_failure', c.agent, s.session_id, s.project, c.file, c.line, c.ts,
-       c.tool || ' failed ' || c.total || 'x with identical input: ' || left(coalesce(c.command, c.input, ''), 160)
-FROM (SELECT *, row_number() OVER w AS n, count(*) OVER (PARTITION BY file, tool, md5(coalesce(input, command, ''))) AS total
-      FROM tool_calls WHERE is_error
-      WINDOW w AS (PARTITION BY file, tool, md5(coalesce(input, command, '')) ORDER BY line)) c
+SELECT 'repeated_failure', r.agent, s.session_id, s.project, r.file, min(r.line), min(r.ts),
+       any_value(r.tool) || ' failed ' || (count(*) + 1) || 'x with identical input and no edit between: '
+       || left(any_value(coalesce(r.command, r.input, '')), 160)
+FROM (SELECT f.* FROM (
+        SELECT *, md5(coalesce(input, command, '')) AS h,
+               lag(line) OVER (PARTITION BY file, tool, md5(coalesce(input, command, '')) ORDER BY line) AS prev_line
+        FROM tool_calls
+        WHERE is_error AND coalesce(exit_code, 0) <> 130
+          AND NOT (exit_code = 1 AND regexp_matches(coalesce(command, ''), {lit(DIFF_LIKE)}))) f
+      WHERE f.prev_line IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM tool_calls e WHERE e.file = f.file AND e.line > f.prev_line
+                        AND e.line < f.line AND e.tool IN {EDIT_TOOLS})) r
 JOIN sessions s USING (file)
-WHERE c.n = 2;
+GROUP BY r.agent, s.session_id, s.project, r.file, r.tool, r.h;
 
 -- 2. A call whose result arrived > 20 min after the call, from a tool that cannot
 --    legitimately run that long: the session sat on a permission prompt. Calls
@@ -116,6 +143,7 @@ FROM (SELECT *, row_number() OVER (PARTITION BY file, grp ORDER BY line DESC) AS
         AND length(text) > 0) t
 JOIN sessions s USING (file)
 WHERE t.rk = 1
+  AND NOT EXISTS (SELECT 1 FROM turns p WHERE p.file = t.file AND p.human AND regexp_matches(p.text, {lit(PROBE_PROMPT)}))
   AND regexp_matches(regexp_replace(t.text, {lit(NOT_A_CLAIM)}, '', 'g'), {lit(RESERVED)})
   AND NOT regexp_matches(t.text, {lit(POINTER)});
 

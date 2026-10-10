@@ -95,6 +95,33 @@ claude = [
     cc("assistant", 2, call("t2", "Bash", {"command": "pytest"})),                  # 50 - replay of 4 (same uuid)
     cc("user", 2.1, result("t2", "Exit code 1\nFAILED test_x", True)),              # 51 - replay of 5
     cc("user", 96, "no, that's wrong: test_x still fails"),                         # 52 - replay of 22
+    cc("assistant", 160, call("b1", "Bash", {"command": "make"})),                  # 53
+    cc("user", 160.1, result("b1", "Exit code 2\nmake: *** [all] Error 2", True)),  # 54
+    cc("assistant", 161, call("e1", "Edit", {"file_path": "/tmp/fx/alpha/b.py", "old_string": "c", "new_string": "d"})),  # 55
+    cc("user", 161.1, result("e1", "ok")),                                          # 56
+    cc("assistant", 162, call("b2", "Bash", {"command": "make"})),                  # 57 - repeated (edit between)
+    cc("user", 162.1, result("b2", "Exit code 2\nmake: *** [all] Error 2", True)),  # 58
+    cc("assistant", 163, call("g1", "Bash", {"command": "git diff --no-index --check /dev/null x.md"})),  # 59
+    cc("user", 163.1, result("g1", "Exit code 1", True)),                           # 60
+    cc("assistant", 164, call("g2", "Bash", {"command": "git diff --no-index --check /dev/null x.md"})),  # 61 - repeated (diff exit 1)
+    cc("user", 164.1, result("g2", "Exit code 1", True)),                           # 62
+    cc("assistant", 165, call("k1", "Bash", {"command": "npm run serve"})),         # 63
+    cc("user", 165.1, result("k1", "Exit code 130", True)),                         # 64
+    cc("assistant", 166, call("k2", "Bash", {"command": "npm run serve"})),         # 65 - repeated (exit 130)
+    cc("user", 166.1, result("k2", "Exit code 130", True)),                         # 66
+    cc("assistant", 167, text("Captured -> sources/2026-09-22-x.md, pushed. Done.")),  # 67 - claim (file path)
+    cc("user", 168, "ok, next"),                                                   # 68
+    cc("assistant", 169, text("Wound up: main @ 47d9ba4. All complete.")),          # 69 - claim (commit after @)
+    cc("user", 170, "ok, next"),                                                   # 70
+    cc("assistant", 171, text("I still need the link to complete the entry.")),     # 71 - claim (not a claim)
+    cc("user", 172, "ok, next"),                                                   # 72
+]
+
+# A headless permission probe: its "DONE" is not a handback to judge.
+PROBE = "33333333-3333-4333-8333-333333333333"
+probe = [
+    {**cc("user", 0, "Call the Bash tool exactly once with this exact command: ls"), "sessionId": PROBE},  # 1
+    {**cc("assistant", 1, text("DONE")), "sessionId": PROBE},                       # 2 - claim (probe session)
 ]
 
 # A subagent transcript of the same session: sidechain turns never count as human.
@@ -160,4 +187,5 @@ def write(path: Path, recs: list) -> None:
 if __name__ == "__main__":
     write(ROOT / "claude" / "-tmp-fx-alpha" / f"{SID}.jsonl", claude)
     write(ROOT / "claude" / "-tmp-fx-alpha" / SID / "subagents" / "agent-a1.jsonl", sub)
+    write(ROOT / "claude" / "-tmp-fx-probe" / f"{PROBE}.jsonl", probe)
     write(ROOT / "codex" / "2026" / "01" / "05" / f"rollout-2026-01-05T10-00-00-{CX}.jsonl", codex)

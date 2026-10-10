@@ -34,15 +34,15 @@ def one(con, sql, *p):
 
 
 def test_row_counts(con):
-    assert one(con, "SELECT count(*) FROM sessions") == 3
-    assert one(con, "SELECT count(*) FROM turns WHERE file = ?", CLAUDE) == 48
+    assert one(con, "SELECT count(*) FROM sessions") == 4
+    assert one(con, "SELECT count(*) FROM turns WHERE file = ?", CLAUDE) == 68
     assert one(con, "SELECT count(*) FROM turns WHERE file = ?", CLAUDE_SUB) == 2
     assert one(con, "SELECT count(*) FROM turns WHERE file = ?", CODEX) == 5
-    assert one(con, "SELECT count(*) FROM tool_calls WHERE file = ?", CLAUDE) == 11
+    assert one(con, "SELECT count(*) FROM tool_calls WHERE file = ?", CLAUDE) == 18
     assert one(con, "SELECT count(*) FROM tool_calls WHERE file = ?", CODEX) == 6
-    assert one(con, "SELECT count(*) FROM errors WHERE file = ?", CLAUDE) == 5
+    assert one(con, "SELECT count(*) FROM errors WHERE file = ?", CLAUDE) == 11
     assert one(con, "SELECT count(*) FROM errors WHERE file = ?", CODEX) == 3
-    assert one(con, "SELECT n_prompts FROM sessions WHERE file = ?", CLAUDE) == 13
+    assert one(con, "SELECT n_prompts FROM sessions WHERE file = ?", CLAUDE) == 16
     assert one(con, "SELECT n_prompts FROM sessions WHERE file = ?", CODEX) == 2
 
 
@@ -81,9 +81,9 @@ def test_archive_incremental(tmp_path):
     shutil.copytree(FIX / "claude", src)
     dst = tmp_path / "archive" / "claude"
     first = archive_tree("claude", src, dst)
-    assert (first.scanned, first.copied) == (2, 2)
+    assert (first.scanned, first.copied) == (3, 3)
     second = archive_tree("claude", src, dst)
-    assert (second.scanned, second.copied) == (2, 0)
+    assert (second.scanned, second.copied) == (3, 0)
     f = next(src.rglob("agent-a1.jsonl"))
     f.write_text(f.read_text() + "\n")
     third = archive_tree("claude", src, dst)
