@@ -24,12 +24,16 @@ RESERVED = (r"(?i)\b(done|complete|completed|fixed|resolved|passing|passes|green
             r"safe|secure|verified|confirmed|proven|no regressions|production-ready)\b")
 # What counts as a verifier pointer: an exit code, a pass count, a path:line,
 # an explicit evidence line, a backticked command with its result, a link to a
-# local file (an artifact path).
+# local file (an artifact path), a test/suite count, "N of M", "by `cmd`", a
+# backticked commit hash.
 POINTER = (r"(?i)(exit(\s+code)?\s*[:=]?\s*\d|\b\d+\s*/\s*\d+\b|\b\d+\s+(tests?\s+)?(passed|failed|passing)\b|"
-           r"[\w./-]+\.\w+:\d+|evidence:|`[^`]+`\s*(passes|passed|exits?|returns?|->|→)|"
-           r"\]\((/|~|\.{1,2}/|[\w-]+/)[^)\s]+\))")
+           r"[\w./-]+\.\w+:\d+|evidence:|`[^`]+`\s*(passes|passed|green|clean|exits?|returns?|->|→)|"
+           r"\]\((/|~|\.{1,2}/|[\w-]+/)[^)\s]+\))|\b\d+\s+(tests?|suites?|checks?|specs?)\b|\b\d+ of \d+\b|"
+           r"\b(by|via|per) `[^`]+`|`[0-9a-f]{7,40}`")
 # Phrases that use a reserved word without claiming success.
-NOT_A_CLAIM = r"(?i)\b(working (tree|directory|dir|copy)|safe to|is it (done|working)|not (yet )?(done|verified|fixed|working))\b"
+NOT_A_CLAIM = (r"(?i)\b(working (tree|directory|dir|copy)|safe to|is it (done|working)|not (yet )?(done|verified|fixed|working)|"
+               r"when (it'?s|it is|that'?s|you'?re) done|want (that|it) done|how it works|green (\*\*)?[\w ]{0,20}button|"
+               r"done/stop|done or paused)\b")
 
 # A leading "no" or a bare "stop." pushes back; "no need", "no luck", "no, that's fine"
 # and "stop ollama" do not. Explicit markers count anywhere in the turn.

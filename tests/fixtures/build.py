@@ -80,6 +80,16 @@ claude = [
     cc("user", 140, "no, that's fine. push it."),                                  # 36 - correction (agreement)
     cc("user", 141, "stop ollama"),                                                # 37 - correction (an instruction)
     cc("user", 142, "Ship it. I meant the staging branch, not main."),             # 38 + user_correction
+    cc("assistant", 143, text("Final gate: GREEN, 733 tests, ruff clean.")),        # 39 - claim (test count)
+    cc("user", 144, "ok, next"),                                                   # 40
+    cc("assistant", 145, text("`make check` green, pushed.")),                      # 41 - claim (command + result)
+    cc("user", 146, "ok, next"),                                                   # 42
+    cc("assistant", 147, text("Verified: pushed as `8d3fd8b`.")),                   # 43 - claim (commit hash)
+    cc("user", 148, "ok, next"),                                                   # 44
+    cc("assistant", 149, text("Move the drive, then tell me when it's done.")),     # 45 - claim (not a claim)
+    cc("user", 150, "ok, next"),                                                   # 46
+    cc("assistant", 151, text("It works now.")),                                   # 47 + unverified_claim
+    cc("user", 152, "ok, next"),                                                   # 48
 ]
 
 # A subagent transcript of the same session: sidechain turns never count as human.

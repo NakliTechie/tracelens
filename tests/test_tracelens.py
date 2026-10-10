@@ -35,14 +35,14 @@ def one(con, sql, *p):
 
 def test_row_counts(con):
     assert one(con, "SELECT count(*) FROM sessions") == 3
-    assert one(con, "SELECT count(*) FROM turns WHERE file = ?", CLAUDE) == 37
+    assert one(con, "SELECT count(*) FROM turns WHERE file = ?", CLAUDE) == 47
     assert one(con, "SELECT count(*) FROM turns WHERE file = ?", CLAUDE_SUB) == 2
     assert one(con, "SELECT count(*) FROM turns WHERE file = ?", CODEX) == 5
     assert one(con, "SELECT count(*) FROM tool_calls WHERE file = ?", CLAUDE) == 11
     assert one(con, "SELECT count(*) FROM tool_calls WHERE file = ?", CODEX) == 6
     assert one(con, "SELECT count(*) FROM errors WHERE file = ?", CLAUDE) == 5
     assert one(con, "SELECT count(*) FROM errors WHERE file = ?", CODEX) == 3
-    assert one(con, "SELECT n_prompts FROM sessions WHERE file = ?", CLAUDE) == 8
+    assert one(con, "SELECT n_prompts FROM sessions WHERE file = ?", CLAUDE) == 13
     assert one(con, "SELECT n_prompts FROM sessions WHERE file = ?", CODEX) == 2
 
 
@@ -66,7 +66,7 @@ EXPECTED = {
     ("repeated_failure", CLAUDE, 4), ("repeated_failure", CODEX, 9),
     ("approval_stall", CLAUDE, 8), ("approval_stall", CLAUDE, 12), ("approval_stall", CLAUDE, 31),
     ("edit_without_read", CLAUDE, 14), ("edit_without_read", CODEX, 6),
-    ("unverified_claim", CLAUDE, 21), ("unverified_claim", CODEX, 11),
+    ("unverified_claim", CLAUDE, 21), ("unverified_claim", CLAUDE, 47), ("unverified_claim", CODEX, 11),
     ("user_correction", CLAUDE, 22), ("user_correction", CLAUDE, 27), ("user_correction", CLAUDE, 38), ("user_correction", CODEX, 12),
 }
 
