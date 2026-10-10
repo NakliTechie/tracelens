@@ -14,7 +14,8 @@ STALL_S = 20 * 60
 
 # Tools that legitimately block longer than 20 minutes: subagents, waits,
 # questions to the user, plan review. A foreground Bash call cannot run past
-# its 10-minute timeout cap, so Bash stays in scope.
+# its 10-minute timeout cap, and a backgrounded one returns its task id at once,
+# so Bash stays in scope either way.
 LONG_TOOLS = ("Agent", "Task", "TaskOutput", "Monitor", "Workflow", "AskUserQuestion",
               "ExitPlanMode", "ScheduleWakeup", "SendMessage", "Skill")
 
@@ -56,13 +57,22 @@ JOIN sessions s USING (file)
 WHERE c.n = 2;
 
 -- 2. A call whose result arrived > 20 min after the call, from a tool that cannot
---    legitimately run that long: the session sat on a permission prompt.
+--    legitimately run that long: the session sat on a permission prompt. Calls
+--    issued in parallel get their results back together once one is approved
+--    (results within 10 s of each other), so they form one stall, cited at the
+--    first call of the group.
 INSERT INTO signals
-SELECT 'approval_stall', c.agent, s.session_id, s.project, c.file, c.line, c.ts,
-       c.tool || ' waited ' || round(c.wait_s / 60) || ' min for its result (result line ' || c.result_line || ')'
-FROM tool_calls c JOIN sessions s USING (file)
-WHERE c.agent = 'claude' AND c.wait_s > {STALL_S} AND NOT c.background
-  AND c.tool NOT IN {LONG_TOOLS};
+SELECT 'approval_stall', 'claude', any_value(s.session_id), any_value(s.project), g.file,
+       min(g.line), min(g.ts),
+       string_agg(g.tool, ' + ' ORDER BY g.line) || ' waited ' || round(max(g.wait_s) / 60)
+         || ' min for its result (result line ' || max(g.result_line) || ')'
+FROM (SELECT *, sum(new) OVER (PARTITION BY file ORDER BY result_ts, line) AS grp
+      FROM (SELECT *, coalesce(epoch(result_ts) - epoch(lag(result_ts) OVER (PARTITION BY file ORDER BY result_ts, line)) > 10, true)::INT AS new
+            FROM tool_calls
+            WHERE agent = 'claude' AND wait_s > {STALL_S}
+              AND tool NOT IN {LONG_TOOLS})) g
+JOIN sessions s USING (file)
+GROUP BY g.file, g.grp;
 
 -- 3a. Claude: the harness refused an edit because the file was never read or changed since.
 INSERT INTO signals

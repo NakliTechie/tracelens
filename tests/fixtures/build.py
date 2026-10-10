@@ -52,7 +52,7 @@ claude = [
     cc("user", 29, result("t4", "a.py\nb.py")),                                     # 9
     cc("assistant", 30, call("t5", "Agent", {"prompt": "review"})),                 # 10 - stall (subagent)
     cc("user", 60, result("t5", "review done")),                                    # 11
-    cc("assistant", 61, call("t6", "Bash", {"command": "sleep 1", "run_in_background": True})),  # 12 - stall (background)
+    cc("assistant", 61, call("t6", "Bash", {"command": "sleep 1", "run_in_background": True})),  # 12 + approval_stall (background returns at once)
     cc("user", 90, result("t6", "started")),                                        # 13
     cc("assistant", 91, call("t7", "Edit", {"file_path": "/tmp/fx/alpha/a.py", "old_string": "x", "new_string": "y"})),  # 14 + edit_without_read
     cc("user", 91.1, result("t7", "<tool_use_error>File has not been read yet. Read it first before writing to it.</tool_use_error>", True)),  # 15
@@ -72,6 +72,10 @@ claude = [
     {"type": "system", "subtype": "api_error", "uuid": "s1", "isSidechain": False, "sessionId": SID,
      "timestamp": ts(103), "cwd": CWD, "error": "overloaded", "level": "error"},     # 29 api error
     {"type": "cost-state", "sessionId": SID, "totalCostUSD": 0.42},                 # 30
+    cc("assistant", 110, call("p1", "Bash", {"command": "git pull"})),              # 31 + approval_stall (one row for 31+32)
+    cc("assistant", 110.5, call("p2", "Read", {"file_path": "/tmp/fx/alpha/c.py"})),  # 32 - parallel sibling of 31
+    cc("user", 135, result("p1", "Already up to date.")),                           # 33
+    cc("user", 135.01, result("p2", "1\tpass")),                                   # 34
 ]
 
 # A subagent transcript of the same session: sidechain turns never count as human.
