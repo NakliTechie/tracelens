@@ -76,6 +76,10 @@ claude = [
     cc("assistant", 110.5, call("p2", "Read", {"file_path": "/tmp/fx/alpha/c.py"})),  # 32 - parallel sibling of 31
     cc("user", 135, result("p1", "Already up to date.")),                           # 33
     cc("user", 135.01, result("p2", "1\tpass")),                                   # 34
+    cc("user", 139, "no need to poll hourly, once a day is enough"),               # 35 - correction (declines an offer)
+    cc("user", 140, "no, that's fine. push it."),                                  # 36 - correction (agreement)
+    cc("user", 141, "stop ollama"),                                                # 37 - correction (an instruction)
+    cc("user", 142, "Ship it. I meant the staging branch, not main."),             # 38 + user_correction
 ]
 
 # A subagent transcript of the same session: sidechain turns never count as human.

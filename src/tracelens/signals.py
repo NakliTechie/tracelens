@@ -31,9 +31,14 @@ POINTER = (r"(?i)(exit(\s+code)?\s*[:=]?\s*\d|\b\d+\s*/\s*\d+\b|\b\d+\s+(tests?\
 # Phrases that use a reserved word without claiming success.
 NOT_A_CLAIM = r"(?i)\b(working (tree|directory|dir|copy)|safe to|is it (done|working)|not (yet )?(done|verified|fixed|working))\b"
 
-CORRECTION_START = r"(?i)^\W*(no|nope|stop|wrong)\b"
+# A leading "no" or a bare "stop." pushes back; "no need", "no luck", "no, that's fine"
+# and "stop ollama" do not. Explicit markers count anywhere in the turn.
+CORRECTION_START = r"(?i)^\W*(no|nope|wrong)\b|^\W*stop(\W*$|[.!,]|\s+(it|that|doing|now)\b)"
+NOT_CORRECTION = (r"(?i)^\W*no\W+(luck|worries|problem|rush|thanks|new|need|point)\b|"
+                  r"^\W*no\W+(it'?s|that'?s|this is|both are|all) (fine|good|ok)\b|"
+                  r"^\W*no\W+\w+(\s+\w+)?\s+(needed|required)\b")
 CORRECTION_ANY = (r"(?i)(\bthat'?s (wrong|not right|incorrect|not what)|\bthis is wrong\b|"
-                  r"\bnot what i (asked|meant|wanted)\b|\byou'?re wrong\b|\byou are wrong\b)")
+                  r"\bnot what i (asked|meant|wanted)\b|\byou'?re wrong\b|\byou are wrong\b|\bi (meant|said)\b)")
 
 def lit(s: str) -> str:
     """SQL string literal; DuckDB does not process backslash escapes."""
@@ -117,7 +122,8 @@ SELECT 'user_correction', t.agent, s.session_id, s.project, t.file, t.line, t.ts
 FROM (SELECT *, row_number() OVER (PARTITION BY file ORDER BY line) AS k FROM turns WHERE human) t
 JOIN sessions s USING (file)
 WHERE t.k > 1
-  AND (regexp_matches(t.text, {lit(CORRECTION_START)}) OR regexp_matches(t.text, {lit(CORRECTION_ANY)}));
+  AND ((regexp_matches(t.text, {lit(CORRECTION_START)}) AND NOT regexp_matches(t.text, {lit(NOT_CORRECTION)}))
+       OR regexp_matches(t.text, {lit(CORRECTION_ANY)}));
 """
 
 
