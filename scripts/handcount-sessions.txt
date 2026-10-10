@@ -1,0 +1,6 @@
+claude/-Users-chiragpatnaik-Code/39c23ae0-8ff8-417d-9497-14062402507a.jsonl
+claude/-Users-chiragpatnaik-Code-drum--claude-worktrees-sleepy-fermat-f274af/9935611b-a9dd-4d1f-a898-969714d35c3b.jsonl
+claude/-Users-chiragpatnaik-Code-knowledge/c1017d92-e6be-4c09-af16-666aa82b4c6b/subagents/agent-abca08a09e4dbf567.jsonl
+codex/2026/10/06/rollout-2026-10-06T15-47-44-01a110b8-1d22-7211-91f8-e9a479d898d5.jsonl
+codex/2026/09/16/rollout-2026-09-16T21-24-19-01a0aaed-1788-75a0-aa84-d0e628395769.jsonl
+codex/2026/10/06/rollout-2026-10-06T17-36-34-01a1111b-c211-79d0-9d42-b2ee0a7e906c.jsonl
