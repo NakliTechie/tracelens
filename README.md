@@ -4,7 +4,7 @@
 
 <p align="center">One CLI. macOS. No server, no account, no model; data stays on your disk.</p>
 
-**Tier: Tool.** One CLI core; the ntkit skill `/traces-nt` (Batch B) is the agent face.
+**Tier: Tool.** One CLI core; the [ntkit](https://github.com/NakliTechie/ntkit) skill `/traces-nt` is the agent face: it reads the index and writes ranked findings to `plan/`.
 
 ## Install
 
@@ -62,4 +62,4 @@ TRACELENS_HOME=. python3 scripts/handcount.py <paths.txt>   # independent per-fi
 
 ## License
 
-Private. · Plan: `plan/` · Formats: [docs/formats.md](docs/formats.md) · Signals: [docs/signals.md](docs/signals.md)
+MIT, see [LICENSE](LICENSE). · Formats: [docs/formats.md](docs/formats.md) · Signals: [docs/signals.md](docs/signals.md)
