@@ -1,22 +1,34 @@
 <h1 align="center">tracelens</h1>
 
-<p align="center"><b>Your Claude Code and Codex transcripts in one local DuckDB file, with five rule signals that point at the exact JSONL line where a session went wrong.</b></p>
+<p align="center">
+  <strong>Your Claude Code and Codex transcripts in one local DuckDB file,<br>
+  with five rule signals that point at the exact line where a session went wrong.</strong>
+</p>
 
-<p align="center">One CLI. macOS. No server, no account, no model; data stays on your disk.</p>
+<p align="center">
+  One CLI. macOS. No account, no server, no model, no telemetry.
+</p>
 
-**Tier: Tool.** One CLI core; the [ntkit](https://github.com/NakliTechie/ntkit) skill `/traces-nt` is the agent face: it reads the index and writes ranked findings to `plan/`.
+<p align="center">
+  <a href="LICENSE"><img alt="MIT" src="https://img.shields.io/badge/license-MIT-0891b2?style=flat-square"></a>
+  <img alt="one CLI" src="https://img.shields.io/badge/install-one%20CLI-0891b2?style=flat-square">
+  <img alt="no account" src="https://img.shields.io/badge/account-none-0891b2?style=flat-square">
+  <img alt="no model" src="https://img.shields.io/badge/model-none-0891b2?style=flat-square">
+</p>
+
+![tracelens report: session totals, signal counts and a weekly table, for 17,775 sessions](marketing/hero.png)
 
 ## Install
 
-| Path | Command |
+| | |
 |---|---|
-| uv (from GitHub) | `uv tool install git+https://github.com/NakliTechie/tracelens.git` |
-| uv (from a clone) | `uv tool install .` |
+| **uv, from GitHub** | `uv tool install git+https://github.com/NakliTechie/tracelens.git` |
+| **uv, from a clone** | `uv tool install .` |
 
-Pick a data directory and run the pipeline once. The archive is an APFS clone of `~/.claude/projects` and `~/.codex/sessions`, so it takes seconds and almost no disk. The index takes about a minute for 12 GB.
+Pick a data directory and run the pipeline once. The archive is an APFS clone of `~/.claude/projects` and `~/.codex/sessions`, so it takes seconds and almost no disk; where a clone is not possible it falls back to a plain copy. The index takes about a minute for 12 GB.
 
 ```bash
-export TRACELENS_HOME=~/Code/tracelens   # holds archive/ and tracelens.duckdb
+export TRACELENS_HOME=~/tracelens   # holds archive/ and tracelens.duckdb
 tracelens archive && tracelens index && tracelens report
 ```
 
@@ -26,17 +38,17 @@ Re-run `tracelens archive` whenever you like; it copies only new or changed file
 
 You have thousands of agent sessions on disk and you have read none of them. Claude Code deletes CLI transcripts after 30 days (`cleanupPeriodDays`), so the evidence of what keeps going wrong disappears before anyone looks.
 
-tracelens keeps a copy, normalises both formats into one DuckDB file, and runs rules that need no model: the same command failing again, a session stuck on a permission prompt, an edit to a file the agent never read, a success claim with no verifier, a human saying "no". Every row cites `file:line`. LiteLLM Lens (`BerriAI/lens`) showed the loop; tracelens does it with DuckDB over files you already have, instead of ClickHouse and OTLP.
+tracelens keeps a copy, normalises both formats into one DuckDB file, and runs rules that need no model: the same command failing again, a session stuck on a permission prompt, an edit to a file the agent never read, a success claim with no verifier, a human saying "no". Every row cites `file:line`.
 
 ## What you get
 
-`tracelens report` prints session and signal counts by agent and week, the projects with the most signal rows, and the top sessions per signal with a `file:line` citation. Open the cited line with `sed -n '<line>p' archive/<file>`, or query the tables directly: `duckdb tracelens.duckdb`. The tables and the fields they come from are in [docs/formats.md](docs/formats.md). The rule definitions and their blind spots are in [docs/signals.md](docs/signals.md).
+`tracelens report` prints session and signal counts by agent and week, the projects with the most signal rows, and the top sessions per signal with a `file:line` citation. Open the cited line with `sed -n '<line>p' archive/<file>`, or query the tables directly with `duckdb tracelens.duckdb`.
 
-The weekly table is the measure: after a fix to a CLAUDE.md line, a playbook or an allow-rule lands, the signal rate for that week should drop.
+The weekly table is the measure. After you change a CLAUDE.md line, a playbook or an allow-rule, the signal rate for that week should drop.
 
-## Privacy
+## Where your data goes
 
-Transcripts hold pasted tokens and personal data. `archive/` and `*.duckdb` are gitignored. tracelens never reads `~/.claude` or `~/.codex` beyond the JSONL trees, never modifies them, and sends nothing off the machine. The test fixtures are synthetic.
+Transcripts hold pasted tokens and personal data. `archive/` and `*.duckdb` are gitignored. tracelens reads only the JSONL trees under `~/.claude` and `~/.codex`, never modifies them, and sends nothing off the machine. The test fixtures are synthetic.
 
 ## Commands
 
@@ -49,7 +61,7 @@ tracelens report     # counts by agent / week / project, top sessions per signal
 tracelens manifest   # every command, its effect and exit codes, as JSON
 ```
 
-Every command takes `--json` and `--home`. `tracelens manifest` is the agent face; the contract it answers to is [docs/agent-contract.md](docs/agent-contract.md).
+Every command takes `--json` and `--home`. `tracelens manifest` is the agent face, and the [ntkit](https://github.com/NakliTechie/ntkit) skill `/traces-nt` uses it to turn the signals into ranked findings. The contract is [docs/agent-contract.md](docs/agent-contract.md).
 
 ## Verify it yourself
 
@@ -62,4 +74,6 @@ TRACELENS_HOME=. python3 scripts/handcount.py <paths.txt>   # independent per-fi
 
 ## License
 
-MIT, see [LICENSE](LICENSE). · Formats: [docs/formats.md](docs/formats.md) · Signals: [docs/signals.md](docs/signals.md)
+MIT, see [LICENSE](LICENSE).
+
+[Signals and their blind spots](docs/signals.md) · [table formats](docs/formats.md) · [agent contract](docs/agent-contract.md) · for a coding agent: `tracelens manifest`
