@@ -2,7 +2,7 @@
 
 <p align="center">
   <strong>Your Claude Code and Codex transcripts in one local DuckDB file,<br>
-  with five rule signals that point at the exact line where a session went wrong.</strong>
+  with ten rule signals that point at the exact line where a session went wrong.</strong>
 </p>
 
 <p align="center">
@@ -56,7 +56,7 @@ Transcripts hold pasted tokens and personal data. `archive/` and `*.duckdb` are 
 tracelens status     # one read: archive size, index age, row and signal counts, next command
 tracelens archive    # incremental copy of both transcript trees into archive/
 tracelens index      # rebuild tracelens.duckdb from archive/ (atomic)
-tracelens signals    # rerun the five rule signals into the signals table
+tracelens signals    # rerun the ten rule signals into the signals table
 tracelens report     # counts by agent / week / project, top sessions per signal (--top N)
 tracelens manifest   # every command, its effect and exit codes, as JSON
 ```

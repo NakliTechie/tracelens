@@ -178,6 +178,65 @@ codex = [
     cx(12, "event_msg", {"type": "turn_aborted", "reason": "interrupted"}),                                 # 14 aborted
 ]
 
+# Project gamma: three sessions for the cross-session and loop signals (6-10).
+GCWD = "/tmp/fx/gamma"
+G1, G2, G3 = ("44444444-4444-4444-8444-444444444444", "55555555-5555-4555-8555-555555555555",
+              "66666666-6666-4666-8666-666666666666")
+LINKS = "cd /tmp/fx/gamma && python3 scripts/check_links.py --all --format=json | head -40"
+RENDER = "cd /tmp/fx/gamma && python3 scripts/render_site.py --out build/site --strict --quiet"
+PROBE_PY = "python3 - <<'PY'\nimport json\nfrom pathlib import Path\n" + "\n".join(
+    f"print(json.loads(Path('build/site/page{i}.json').read_text())['status'])" for i in range(4)) + "\nPY"
+
+
+def gc(sid: str, kind: str, minutes: float, content, **extra) -> dict:
+    return {**cc(kind, minutes, content, **extra), "sessionId": sid, "cwd": GCWD, "uuid": f"{sid[:2]}-{minutes}"}
+
+
+gamma1 = [
+    gc(G1, "user", 200, "Build the docs."),                                                      # 1
+    gc(G1, "assistant", 201, call("x1", "Bash", {"command": LINKS})),                            # 2
+    gc(G1, "user", 201.1, result("x1", "0 broken")),                                             # 3
+    gc(G1, "assistant", 202, call("x2", "Bash", {"command": "npx tsc --build"})),                # 4  - recurring_failure (first session)
+    gc(G1, "user", 202.1, result("x2", "error TS2304: Cannot find name 'foo' at /tmp/fx/gamma/src/a.ts:12", True)),  # 5
+    gc(G1, "assistant", 203, call("x3", "Bash", {"command": RENDER})),                           # 6  - recurring_action (2 sessions only)
+    gc(G1, "user", 203.1, result("x3", "built")),                                                # 7
+]
+gamma2 = [
+    gc(G2, "user", 300, "Fix the build."),                                                       # 1
+    gc(G2, "assistant", 301, call("y1", "Bash", {"command": LINKS})),                            # 2
+    gc(G2, "user", 301.1, result("y1", "0 broken")),                                             # 3
+    gc(G2, "assistant", 302, call("y2", "Bash", {"command": "npx tsc --build"})),                # 4  + recurring_failure (seen in gamma1)
+    gc(G2, "user", 302.1, result("y2", "error TS2304: Cannot find name 'foo' at /tmp/fx/gamma/src/b.ts:40", True)),  # 5
+    gc(G2, "assistant", 303, call("y3", "Bash", {"command": RENDER})),                           # 6
+    gc(G2, "user", 303.1, result("y3", "built")),                                                # 7
+]
+FAIL = "Exit code 1\nFAILED tests/test_api.py::test_get - assert 404 == 200"
+gamma3 = [
+    gc(G3, "user", 400, "Make the API tests pass."),                                             # 1
+    gc(G3, "assistant", 401, call("z1", "Bash", {"command": LINKS})),                            # 2  + recurring_action (third session)
+    gc(G3, "user", 401.1, result("z1", "0 broken")),                                             # 3
+]
+for i in range(4):  # 4 identical failing checks with an edit to one file between: a streak
+    m = 402 + i
+    gamma3 += [
+        gc(G3, "assistant", m, call(f"z{i}t", "Bash", {"command": "pytest tests/test_api.py"})),  # 4, 8, 12, 16 (+ no_progress_streak at 4)
+        gc(G3, "user", m + 0.1, result(f"z{i}t", FAIL, True)),
+        gc(G3, "assistant", m + 0.2, call(f"z{i}e", "Edit", {"file_path": f"{GCWD}/src/api.py", "old_string": f"v{i}", "new_string": f"v{i + 1}"})),
+        gc(G3, "user", m + 0.3, result(f"z{i}e", "ok")),
+    ]
+for i in range(5):  # 5 identical long successful calls: an argument loop
+    m = 410 + i
+    gamma3 += [
+        gc(G3, "assistant", m, call(f"z{i}p", "Bash", {"command": PROBE_PY})),                   # 20 (+ repeated_args at 20)
+        gc(G3, "user", m + 0.1, result(f"z{i}p", "ok\nok\nok\nok")),
+    ]
+gamma3 += [
+    gc(G3, "assistant", 420, call("z9p", "Bash", {"command": PROBE_PY + "\n"})),                 # 30 - repeated_args (other input)
+    gc(G3, "user", 420.1, result("z9p", "ok")),
+    gc(G3, "assistant", 421, text("Still failing: test_get returns 404; I stopped to ask.")),     # 32 - claim
+]
+# gamma3 has 32 turns against a median of 7 in gamma: + loop_cost_outlier, cited at the streak (line 4).
+
 
 def write(path: Path, recs: list) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -188,4 +247,6 @@ if __name__ == "__main__":
     write(ROOT / "claude" / "-tmp-fx-alpha" / f"{SID}.jsonl", claude)
     write(ROOT / "claude" / "-tmp-fx-alpha" / SID / "subagents" / "agent-a1.jsonl", sub)
     write(ROOT / "claude" / "-tmp-fx-probe" / f"{PROBE}.jsonl", probe)
+    for sid, recs in ((G1, gamma1), (G2, gamma2), (G3, gamma3)):
+        write(ROOT / "claude" / "-tmp-fx-gamma" / f"{sid}.jsonl", recs)
     write(ROOT / "codex" / "2026" / "01" / "05" / f"rollout-2026-01-05T10-00-00-{CX}.jsonl", codex)

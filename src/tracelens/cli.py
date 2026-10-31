@@ -33,7 +33,7 @@ MANIFEST = {
         "status": {"effect": "read-only", "does": "one-read picture: archive size, index age, row and signal counts"},
         "archive": {"effect": "writes archive/", "does": "incremental copy of ~/.claude/projects and ~/.codex/sessions JSONL; never touches the sources"},
         "index": {"effect": "rewrites tracelens.duckdb atomically", "does": "parse archive/ into sessions, turns, tool_calls, file_reads, errors", "needs": "archive"},
-        "signals": {"effect": "rewrites the signals table", "does": "run the five rule signals", "needs": "index"},
+        "signals": {"effect": "rewrites the signals table", "does": "run the ten rule signals", "needs": "index"},
         "report": {"effect": "read-only (runs signals first if the table is missing)", "does": "counts by project / agent / week and top sessions per signal", "needs": "index", "args": {"--top": "sessions per signal, default 5"}},
         "manifest": {"effect": "read-only", "does": "print this manifest"},
     },

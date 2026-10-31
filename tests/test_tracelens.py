@@ -17,6 +17,8 @@ FIX = Path(__file__).parent / "fixtures" / "archive"
 CLAUDE = "claude/-tmp-fx-alpha/11111111-1111-4111-8111-111111111111.jsonl"
 CLAUDE_SUB = "claude/-tmp-fx-alpha/11111111-1111-4111-8111-111111111111/subagents/agent-a1.jsonl"
 CODEX = "codex/2026/01/05/rollout-2026-01-05T10-00-00-22222222-2222-4222-8222-222222222222.jsonl"
+G2 = "claude/-tmp-fx-gamma/55555555-5555-4555-8555-555555555555.jsonl"
+G3 = "claude/-tmp-fx-gamma/66666666-6666-4666-8666-666666666666.jsonl"
 
 
 @pytest.fixture(scope="module")
@@ -34,7 +36,7 @@ def one(con, sql, *p):
 
 
 def test_row_counts(con):
-    assert one(con, "SELECT count(*) FROM sessions") == 4
+    assert one(con, "SELECT count(*) FROM sessions") == 7
     assert one(con, "SELECT count(*) FROM turns WHERE file = ?", CLAUDE) == 68
     assert one(con, "SELECT count(*) FROM turns WHERE file = ?", CLAUDE_SUB) == 2
     assert one(con, "SELECT count(*) FROM turns WHERE file = ?", CODEX) == 5
@@ -68,6 +70,8 @@ EXPECTED = {
     ("edit_without_read", CLAUDE, 14), ("edit_without_read", CODEX, 6),
     ("unverified_claim", CLAUDE, 21), ("unverified_claim", CLAUDE, 47), ("unverified_claim", CODEX, 11),
     ("user_correction", CLAUDE, 22), ("user_correction", CLAUDE, 27), ("user_correction", CLAUDE, 38), ("user_correction", CODEX, 12),
+    ("recurring_failure", G2, 4), ("recurring_action", G3, 2), ("no_progress_streak", G3, 4),
+    ("repeated_args", G3, 20), ("loop_cost_outlier", G3, 4),
 }
 
 
@@ -81,9 +85,9 @@ def test_archive_incremental(tmp_path):
     shutil.copytree(FIX / "claude", src)
     dst = tmp_path / "archive" / "claude"
     first = archive_tree("claude", src, dst)
-    assert (first.scanned, first.copied) == (3, 3)
+    assert (first.scanned, first.copied) == (6, 6)
     second = archive_tree("claude", src, dst)
-    assert (second.scanned, second.copied) == (3, 0)
+    assert (second.scanned, second.copied) == (6, 0)
     f = next(src.rglob("agent-a1.jsonl"))
     f.write_text(f.read_text() + "\n")
     third = archive_tree("claude", src, dst)
@@ -105,6 +109,8 @@ def test_cli_end_to_end(tmp_path, monkeypatch, capsys):
     assert main(["report", *home, "--json"]) == 0
     rep = json.loads(capsys.readouterr().out)
     assert sum(rep["signals"].values()) == len(EXPECTED)
+    spend = {r["signal"]: r for r in rep["cost"]}
+    assert spend["repeated_failure"]["cost_usd"] == 0.42 and spend["loop_cost_outlier"]["turns"] == 32
     assert main(["status", *home, "--json"]) == 0
     st = json.loads(capsys.readouterr().out)
     assert st["archive"]["codex"]["files"] == 1 and st["next"] is None

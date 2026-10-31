@@ -45,8 +45,16 @@ def build_report(con: duckdb.DuckDBPyConnection, top: int = 5, top_projects: int
                    min(g.line) AS first_line, arg_min(g.detail, g.line) AS example
             FROM signals g WHERE g.signal = ? GROUP BY ALL ORDER BY hits DESC, g.file LIMIT ?""", [s, top])
     signal_totals = dict(con.execute("SELECT signal, count(*) FROM signals GROUP BY 1").fetchall())
+    # Spend behind each signal: the summed cost and turns of the distinct sessions
+    # it fired in. Cost is null where the transcript records none (Codex).
+    cost = rows("""
+        SELECT g.signal, count(DISTINCT g.file) AS sessions, round(sum(s.cost_usd), 2) AS cost_usd,
+               count(s.cost_usd) AS sessions_with_cost, sum(s.n_turns) AS turns
+        FROM (SELECT DISTINCT signal, file FROM signals) g JOIN sessions s USING (file)
+        GROUP BY 1 ORDER BY cost_usd DESC NULLS LAST, turns DESC""")
     return {"totals": totals, "signals": {s: signal_totals.get(s, 0) for s in SIGNALS},
-            "by_agent_week": by_agent_week, "by_project": by_project, "top_sessions": top_sessions}
+            "by_agent_week": by_agent_week, "by_project": by_project, "top_sessions": top_sessions,
+            "cost": cost}
 
 
 def _table(rows: list[dict], cols: list[str]) -> str:
@@ -59,7 +67,9 @@ def _table(rows: list[dict], cols: list[str]) -> str:
 
 
 ABBR = {"repeated_failure": "rep_fail", "approval_stall": "stall", "edit_without_read": "edit_nr",
-        "unverified_claim": "unverif", "user_correction": "correct"}
+        "unverified_claim": "unverif", "user_correction": "correct", "recurring_failure": "recur_f",
+        "recurring_action": "recur_a", "no_progress_streak": "streak", "repeated_args": "args",
+        "loop_cost_outlier": "outlier"}
 
 
 def render(rep: dict) -> str:
@@ -67,6 +77,8 @@ def render(rep: dict) -> str:
     out.append(_table(rep["totals"], ["agent", "sessions", "main_sessions", "prompts", "tool_calls",
                                       "tool_errors", "first_day", "last_day"]))
     out += ["", "## Signals", _table([{"signal": k, "rows": v} for k, v in rep["signals"].items()], ["signal", "rows"])]
+    out += ["", "## Spend behind each signal (sessions it fired in)",
+            _table(rep["cost"], ["signal", "sessions", "cost_usd", "sessions_with_cost", "turns"])]
     short = lambda rs: [{**r, **{ABBR[s]: r.get(s) or 0 for s in SIGNALS}} for r in rs]
     out += ["", "## By agent and week (week starts Monday, IST)",
             _table([{**r, "week": r["week"] or "(no ts)"} for r in short(rep["by_agent_week"])],["week", "agent", "sessions", "tool_calls", *ABBR.values()])]

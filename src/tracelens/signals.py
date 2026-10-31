@@ -1,4 +1,4 @@
-"""Five rule signals over the index. No model. Each row cites file + line.
+"""Ten rule signals over the index. No model. Each row cites file + line.
 
 The rules, their exact definitions and their known blind spots are in
 docs/signals.md. Every rule is one SQL statement inserting into `signals`.
@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import duckdb
 
-SIGNALS = ("repeated_failure", "approval_stall", "edit_without_read", "unverified_claim", "user_correction")
+SIGNALS = ("repeated_failure", "approval_stall", "edit_without_read", "unverified_claim", "user_correction",
+           "recurring_failure", "recurring_action", "no_progress_streak", "repeated_args", "loop_cost_outlier")
 
 STALL_S = 20 * 60
 
@@ -61,9 +62,36 @@ NOT_CORRECTION = (r"(?i)^\W*no\W+(luck|worries|problem|rush|thanks|new|need|poin
 CORRECTION_ANY = (r"(?i)(\bthat'?s (wrong|not right|incorrect|not what)|\bthis is wrong\b|"
                   r"\bnot what i (asked|meant|wanted)\b|\byou'?re wrong\b|\byou are wrong\b|\bi (meant|said)\b)")
 
+# Cross-session and loop signals (6-10). An error or command "shape" masks
+# paths, long hex runs and numbers, so the same failure on another file or
+# line still matches. The streak keeps paths: a check on another file is
+# progress, not a repeat.
+PATH_RE = r"""(/[^\s:'"]+)+"""
+HEX_RE = r"[0-9a-f]{7,}"
+NUM_RE = r"[0-9]+"
+REJECTED = r"(?i)doesn't want to proceed|user rejected|tool use was rejected"
+ACTION_MIN = 60      # masked command length: shorter ones are everyday commands
+ACTION_SESSIONS = 3  # sessions of one project before a command is "recurring"
+STREAK_MIN = 4       # identical check results in a row
+STREAK_FILES = 3     # at most this many files edited during the streak
+ARGS_MIN = 200       # characters of input for a repeated call to count
+ARGS_REPEAT = 5      # identical successful calls in one session
+OUTLIER_X = 3        # turns above this multiple of the project's median
+OUTLIER_SESSIONS = 3 # sessions a project needs before it has a median
+
+
 def lit(s: str) -> str:
     """SQL string literal; DuckDB does not process backslash escapes."""
     return "'" + s.replace("'", "''") + "'"
+
+
+def shape(x: str, n: int, keep_paths: bool = False) -> str:
+    """SQL for the masked, lower-cased first n characters of column x."""
+    e = f"lower(left(coalesce({x}, ''), {n}))"
+    if not keep_paths:
+        e = f"regexp_replace({e}, {lit(PATH_RE)}, '<p>', 'g')"
+    e = f"regexp_replace({e}, {lit(HEX_RE)}, '<h>', 'g')"
+    return f"regexp_replace({e}, {lit(NUM_RE)}, '<n>', 'g')"
 
 
 SQL = f"""
@@ -156,6 +184,93 @@ JOIN sessions s USING (file)
 WHERE t.k > 1
   AND ((regexp_matches(t.text, {lit(CORRECTION_START)}) AND NOT regexp_matches(t.text, {lit(NOT_CORRECTION)}))
        OR regexp_matches(t.text, {lit(CORRECTION_ANY)}));
+
+-- Shapes used by 6-9, computed once.
+CREATE OR REPLACE TEMP TABLE shaped AS
+SELECT c.*, s.project, s.session_id AS sid, s.started_at,
+       {shape('c.error_text', 160)} AS efp,
+       {shape('c.command', 400)} AS cfp,
+       {shape('c.command', 400, keep_paths=True)} AS cpath
+FROM tool_calls c JOIN sessions s USING (file);
+
+-- 6. A failure whose shape (tool + masked error text) an earlier session already
+--    hit: the same lesson learned twice. One row per session and shape, cited at
+--    its first occurrence in that session. User rejections, exit 130 and a bare
+--    "Exit code N" are not lessons.
+INSERT INTO signals
+SELECT 'recurring_failure', f.agent, f.sid, f.project, f.file, f.line, f.ts,
+       f.tool || ' failed as in ' || (f.k - 1) || ' earlier session(s), first ' || f.first_file || ':' || f.first_line
+       || ': ' || left(f.efp, 120)
+FROM (SELECT g.*, row_number() OVER (PARTITION BY tool, efp ORDER BY ts, file) AS k,
+             first_value(file) OVER (PARTITION BY tool, efp ORDER BY ts, file) AS first_file,
+             first_value(line) OVER (PARTITION BY tool, efp ORDER BY ts, file) AS first_line
+      FROM (SELECT agent, sid, project, file, tool, efp, min(line) AS line, min(ts) AS ts
+            FROM shaped
+            WHERE is_error AND coalesce(exit_code, 0) <> 130 AND efp <> ''
+              AND NOT regexp_matches(trim(efp), '^(exit code <n>|<p>)$')
+              AND NOT regexp_matches(coalesce(error_text, ''), {lit(REJECTED)})
+            GROUP BY ALL) g) f
+WHERE f.k > 1;
+
+-- 7. The same long command shape run in ACTION_SESSIONS or more sessions of one
+--    project: a step worth writing once as a script, skill or instruction line.
+--    One row per project and shape, cited where it becomes recurring.
+INSERT INTO signals
+SELECT 'recurring_action', r.agent, r.sid, r.project, r.file, r.line, r.ts,
+       'same command in ' || r.n || ' sessions of ' || r.project || ': ' || left(r.cfp, 140)
+FROM (SELECT g.*, row_number() OVER (PARTITION BY project, cfp ORDER BY ts, file) AS k,
+             count(*) OVER (PARTITION BY project, cfp) AS n
+      FROM (SELECT any_value(agent) AS agent, sid, project, file, cfp, min(line) AS line, min(ts) AS ts
+            FROM shaped
+            WHERE command IS NOT NULL AND project IS NOT NULL AND length(cfp) >= {ACTION_MIN}
+            GROUP BY sid, project, file, cfp) g) r
+WHERE r.k = {ACTION_SESSIONS};
+
+-- 8. STREAK_MIN or more runs in a row of one check (same command, paths kept)
+--    with the same exit code and error shape, while the session edited between
+--    1 and STREAK_FILES files: edits that changed nothing the check sees.
+INSERT INTO signals
+SELECT 'no_progress_streak', g.agent, g.sid, g.project, g.file, g.l0, g.t0,
+       g.n || ' runs in a row with the same result (exit ' || g.ec || ') while editing ' || g.ne || ' file(s): '
+       || left(g.cpath, 140)
+FROM (SELECT x.*, (SELECT count(DISTINCT e.target_path) FROM tool_calls e
+                   WHERE e.file = x.file AND e.line > x.l0 AND e.line < x.l1 AND e.tool IN {EDIT_TOOLS}) AS ne
+      FROM (SELECT any_value(agent) AS agent, any_value(sid) AS sid, any_value(project) AS project, file, cpath,
+                   ec, efp, min(line) AS l0, max(line) AS l1, min(ts) AS t0, count(*) AS n
+            FROM (SELECT *, coalesce(exit_code, -1) AS ec,
+                         row_number() OVER (PARTITION BY file ORDER BY line)
+                         - row_number() OVER (PARTITION BY file, cpath, coalesce(exit_code, -1), efp ORDER BY line) AS grp
+                  FROM shaped WHERE command IS NOT NULL)
+            GROUP BY file, cpath, ec, efp, grp
+            HAVING count(*) >= {STREAK_MIN}) x) g
+WHERE g.ne BETWEEN 1 AND {STREAK_FILES};
+
+-- 9. One long call (same tool, byte-identical input of ARGS_MIN+ characters)
+--    that succeeds ARGS_REPEAT or more times in a session: an argument loop.
+--    Failures are repeated_failure's; long-running tools are skipped.
+INSERT INTO signals
+SELECT 'repeated_args', any_value(c.agent), any_value(s.session_id), any_value(s.project), c.file, min(c.line), min(c.ts),
+       any_value(c.tool) || ' called ' || count(*) || 'x with the same ' || length(any_value(coalesce(c.input, c.command)))
+       || '-character input: ' || left(regexp_replace(any_value(coalesce(c.command, c.input)), '\\s+', ' ', 'g'), 120)
+FROM tool_calls c JOIN sessions s USING (file)
+WHERE NOT c.is_error AND length(coalesce(c.input, c.command, '')) >= {ARGS_MIN} AND c.tool NOT IN {LONG_TOOLS}
+GROUP BY c.file, c.tool, md5(coalesce(c.input, c.command, ''))
+HAVING count(*) >= {ARGS_REPEAT};
+
+-- 10. A session that loops (it has a repeated_failure or no_progress_streak row)
+--     and ran more than OUTLIER_X times its project's median turns: the loop cost
+--     real time. Cited at the session's first loop row. Needs OUTLIER_SESSIONS
+--     sessions in the project.
+INSERT INTO signals
+SELECT 'loop_cost_outlier', any_value(g.agent), any_value(s.session_id), s.project, g.file, min(g.line), min(g.ts),
+       any_value(s.n_turns) || ' turns, ' || round(any_value(s.n_turns) / any_value(m.med), 1) || 'x the median of '
+       || s.project || coalesce(', $' || round(any_value(s.cost_usd), 2), '') || '; loops: '
+       || string_agg(DISTINCT g.signal, ', ')
+FROM signals g JOIN sessions s USING (file)
+JOIN (SELECT project, median(n_turns) AS med, count(*) AS ns FROM sessions WHERE kind = 'main' GROUP BY 1) m ON m.project = s.project
+WHERE g.signal IN ('repeated_failure', 'no_progress_streak') AND m.ns >= {OUTLIER_SESSIONS} AND m.med > 0
+  AND s.n_turns > {OUTLIER_X} * m.med
+GROUP BY g.file, s.project;
 """
 
 
