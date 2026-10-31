@@ -1,6 +1,6 @@
 [project]
 name = "tracelens"
-version = "0.1.0"
+version = "0.2.0"
 description = "Local trace investigator for Claude Code and Codex sessions: archive, index in DuckDB, rule signals, report."
 readme = "README.md"
 license = "MIT"

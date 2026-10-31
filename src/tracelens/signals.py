@@ -200,7 +200,7 @@ FROM tool_calls c JOIN sessions s USING (file);
 INSERT INTO signals
 SELECT 'recurring_failure', f.agent, f.sid, f.project, f.file, f.line, f.ts,
        f.tool || ' failed as in ' || (f.k - 1) || ' earlier session(s), first ' || f.first_file || ':' || f.first_line
-       || ': ' || left(f.efp, 120)
+       || ' · shape: ' || left(regexp_replace(f.efp, '\\s+', ' ', 'g'), 120)
 FROM (SELECT g.*, row_number() OVER (PARTITION BY tool, efp ORDER BY ts, file) AS k,
              first_value(file) OVER (PARTITION BY tool, efp ORDER BY ts, file) AS first_file,
              first_value(line) OVER (PARTITION BY tool, efp ORDER BY ts, file) AS first_line
@@ -217,7 +217,7 @@ WHERE f.k > 1;
 --    One row per project and shape, cited where it becomes recurring.
 INSERT INTO signals
 SELECT 'recurring_action', r.agent, r.sid, r.project, r.file, r.line, r.ts,
-       'same command in ' || r.n || ' sessions of ' || r.project || ': ' || left(r.cfp, 140)
+       'same command in ' || r.n || ' sessions of ' || r.project || ' · shape: ' || left(regexp_replace(r.cfp, '\\s+', ' ', 'g'), 140)
 FROM (SELECT g.*, row_number() OVER (PARTITION BY project, cfp ORDER BY ts, file) AS k,
              count(*) OVER (PARTITION BY project, cfp) AS n
       FROM (SELECT any_value(agent) AS agent, sid, project, file, cfp, min(line) AS line, min(ts) AS ts
@@ -231,8 +231,8 @@ WHERE r.k = {ACTION_SESSIONS};
 --    1 and STREAK_FILES files: edits that changed nothing the check sees.
 INSERT INTO signals
 SELECT 'no_progress_streak', g.agent, g.sid, g.project, g.file, g.l0, g.t0,
-       g.n || ' runs in a row with the same result (exit ' || g.ec || ') while editing ' || g.ne || ' file(s): '
-       || left(g.cpath, 140)
+       g.n || ' runs in a row with the same result (exit ' || g.ec || ') while editing ' || g.ne || ' file(s) · shape: '
+       || left(regexp_replace(g.cpath, '\\s+', ' ', 'g'), 140)
 FROM (SELECT x.*, (SELECT count(DISTINCT e.target_path) FROM tool_calls e
                    WHERE e.file = x.file AND e.line > x.l0 AND e.line < x.l1 AND e.tool IN {EDIT_TOOLS}) AS ne
       FROM (SELECT any_value(agent) AS agent, any_value(sid) AS sid, any_value(project) AS project, file, cpath,
@@ -251,7 +251,7 @@ WHERE g.ne BETWEEN 1 AND {STREAK_FILES};
 INSERT INTO signals
 SELECT 'repeated_args', any_value(c.agent), any_value(s.session_id), any_value(s.project), c.file, min(c.line), min(c.ts),
        any_value(c.tool) || ' called ' || count(*) || 'x with the same ' || length(any_value(coalesce(c.input, c.command)))
-       || '-character input: ' || left(regexp_replace(any_value(coalesce(c.command, c.input)), '\\s+', ' ', 'g'), 120)
+       || '-character input · shape: ' || left(regexp_replace(any_value(coalesce(c.command, c.input)), '\\s+', ' ', 'g'), 120)
 FROM tool_calls c JOIN sessions s USING (file)
 WHERE NOT c.is_error AND length(coalesce(c.input, c.command, '')) >= {ARGS_MIN} AND c.tool NOT IN {LONG_TOOLS}
 GROUP BY c.file, c.tool, md5(coalesce(c.input, c.command, ''))

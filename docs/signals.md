@@ -1,6 +1,6 @@
 # Rule signals
 
-Ten rules, no model. Each is one SQL statement (rules 6-9 share one temp table of masked shapes) in `src/tracelens/signals.py`. Every row cites `file:line` in the archive. Fixtures in `tests/fixtures/build.py` mark each expected positive (+) and negative (-).
+Ten rules, no model. Each is one SQL statement (rules 6-9 share one temp table of masked shapes; their `detail` ends with ` · shape: ` and the masked error or command, a ready cluster key) in `src/tracelens/signals.py`. Every row cites `file:line` in the archive. Fixtures in `tests/fixtures/build.py` mark each expected positive (+) and negative (-).
 
 | Signal | Fires on | Cites | Blind spots |
 |---|---|---|---|
