@@ -192,6 +192,15 @@ def gc(sid: str, kind: str, minutes: float, content, **extra) -> dict:
     return {**cc(kind, minutes, content, **extra), "sessionId": sid, "cwd": GCWD, "uuid": f"{sid[:2]}-{minutes}"}
 
 
+def chat(sid: str, start: float, pairs: int) -> list:
+    """Ordinary work turns that fire no signal: padding to set a session's length."""
+    out = []
+    for i in range(pairs):
+        out += [gc(sid, "assistant", start + i, text(f"Reading part {i} of the docs.")),
+                gc(sid, "user", start + i + 0.5, "ok, next")]
+    return out
+
+
 gamma1 = [
     gc(G1, "user", 200, "Build the docs."),                                                      # 1
     gc(G1, "assistant", 201, call("x1", "Bash", {"command": LINKS})),                            # 2
@@ -200,7 +209,7 @@ gamma1 = [
     gc(G1, "user", 202.1, result("x2", "error TS2304: Cannot find name 'foo' at /tmp/fx/gamma/src/a.ts:12", True)),  # 5
     gc(G1, "assistant", 203, call("x3", "Bash", {"command": RENDER})),                           # 6  - recurring_action (2 sessions only)
     gc(G1, "user", 203.1, result("x3", "built")),                                                # 7
-]
+] + chat(G1, 210, 28)                                                                            # 8-63: 63 turns
 gamma2 = [
     gc(G2, "user", 300, "Fix the build."),                                                       # 1
     gc(G2, "assistant", 301, call("y1", "Bash", {"command": LINKS})),                            # 2
@@ -209,7 +218,7 @@ gamma2 = [
     gc(G2, "user", 302.1, result("y2", "error TS2304: Cannot find name 'foo' at /tmp/fx/gamma/src/b.ts:40", True)),  # 5
     gc(G2, "assistant", 303, call("y3", "Bash", {"command": RENDER})),                           # 6
     gc(G2, "user", 303.1, result("y3", "built")),                                                # 7
-]
+] + chat(G2, 310, 28)                                                                            # 8-63: 63 turns
 FAIL = "Exit code 1\nFAILED tests/test_api.py::test_get - assert 404 == 200"
 gamma3 = [
     gc(G3, "user", 400, "Make the API tests pass."),                                             # 1
@@ -233,9 +242,20 @@ for i in range(5):  # 5 identical long successful calls: an argument loop
 gamma3 += [
     gc(G3, "assistant", 420, call("z9p", "Bash", {"command": PROBE_PY + "\n"})),                 # 30 - repeated_args (other input)
     gc(G3, "user", 420.1, result("z9p", "ok")),
-    gc(G3, "assistant", 421, text("Still failing: test_get returns 404; I stopped to ask.")),     # 32 - claim
 ]
-# gamma3 has 32 turns against a median of 7 in gamma: + loop_cost_outlier, cited at the streak (line 4).
+for i, (c1, err) in enumerate((("npm run lint", "lint: 3 problems"), ("npm run typecheck", "tsc: 2 errors"))):
+    m = 422 + 2 * i  # the same failing command twice with no edit between: two more loop rows
+    gamma3 += [
+        gc(G3, "assistant", m, call(f"zl{i}a", "Bash", {"command": c1})),
+        gc(G3, "user", m + 0.1, result(f"zl{i}a", f"Exit code 1\n{err}", True)),
+        gc(G3, "assistant", m + 0.5, call(f"zl{i}b", "Bash", {"command": c1})),                   # 34, 38 + repeated_failure
+        gc(G3, "user", m + 0.6, result(f"zl{i}b", f"Exit code 1\n{err}", True)),
+    ]
+gamma3 += chat(G3, 430, 85) + [
+    gc(G3, "assistant", 600, text("Still failing: test_get returns 404; I stopped to ask.")),     # last - claim
+]
+# gamma3: 3 loop rows and its length against a median of 63 over gamma's 50+-turn sessions:
+# + loop_cost_outlier, cited at the streak (line 4). With only the streak (1 loop row) it would not fire.
 
 
 def write(path: Path, recs: list) -> None:

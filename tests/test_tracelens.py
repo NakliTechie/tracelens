@@ -72,6 +72,7 @@ EXPECTED = {
     ("user_correction", CLAUDE, 22), ("user_correction", CLAUDE, 27), ("user_correction", CLAUDE, 38), ("user_correction", CODEX, 12),
     ("recurring_failure", G2, 4), ("recurring_action", G3, 2), ("no_progress_streak", G3, 4),
     ("repeated_args", G3, 20), ("loop_cost_outlier", G3, 4),
+    ("repeated_failure", G3, 34), ("repeated_failure", G3, 38),
 }
 
 
@@ -110,7 +111,7 @@ def test_cli_end_to_end(tmp_path, monkeypatch, capsys):
     rep = json.loads(capsys.readouterr().out)
     assert sum(rep["signals"].values()) == len(EXPECTED)
     spend = {r["signal"]: r for r in rep["cost"]}
-    assert spend["repeated_failure"]["cost_usd"] == 0.42 and spend["loop_cost_outlier"]["turns"] == 32
+    assert spend["repeated_failure"]["cost_usd"] == 0.42 and spend["loop_cost_outlier"]["turns"] == 210
     assert main(["status", *home, "--json"]) == 0
     st = json.loads(capsys.readouterr().out)
     assert st["archive"]["codex"]["files"] == 1 and st["next"] is None

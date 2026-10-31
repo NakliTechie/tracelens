@@ -77,7 +77,9 @@ STREAK_FILES = 3     # at most this many files edited during the streak
 ARGS_MIN = 200       # characters of input for a repeated call to count
 ARGS_REPEAT = 5      # identical successful calls in one session
 OUTLIER_X = 3        # turns above this multiple of the project's median
-OUTLIER_SESSIONS = 3 # sessions a project needs before it has a median
+OUTLIER_FLOOR = 50   # the median is over main sessions this long; scheduled runs and probes are shorter
+OUTLIER_SESSIONS = 3 # sessions that long a project needs before it has a median
+OUTLIER_LOOPS = 3    # loop rows the session needs: the loops, not the work, explain its length
 
 
 def lit(s: str) -> str:
@@ -257,9 +259,10 @@ WHERE NOT c.is_error AND length(coalesce(c.input, c.command, '')) >= {ARGS_MIN} 
 GROUP BY c.file, c.tool, md5(coalesce(c.input, c.command, ''))
 HAVING count(*) >= {ARGS_REPEAT};
 
--- 10. A session that loops (it has a repeated_failure or no_progress_streak row)
---     and ran more than OUTLIER_X times its project's median turns: the loop cost
---     real time. Cited at the session's first loop row. Needs OUTLIER_SESSIONS
+-- 10. A session with OUTLIER_LOOPS or more loop rows (repeated_failure,
+--     no_progress_streak) that ran more than OUTLIER_X times the median turns of
+--     its project's main sessions of OUTLIER_FLOOR+ turns: the loops cost real
+--     time. Cited at the session's first loop row. Needs OUTLIER_SESSIONS such
 --     sessions in the project.
 INSERT INTO signals
 SELECT 'loop_cost_outlier', any_value(g.agent), any_value(s.session_id), s.project, g.file, min(g.line), min(g.ts),
@@ -267,10 +270,12 @@ SELECT 'loop_cost_outlier', any_value(g.agent), any_value(s.session_id), s.proje
        || s.project || coalesce(', $' || round(any_value(s.cost_usd), 2), '') || '; loops: '
        || string_agg(DISTINCT g.signal, ', ')
 FROM signals g JOIN sessions s USING (file)
-JOIN (SELECT project, median(n_turns) AS med, count(*) AS ns FROM sessions WHERE kind = 'main' GROUP BY 1) m ON m.project = s.project
+JOIN (SELECT project, median(n_turns) AS med, count(*) AS ns FROM sessions
+      WHERE kind = 'main' AND n_turns >= {OUTLIER_FLOOR} GROUP BY 1) m ON m.project = s.project
 WHERE g.signal IN ('repeated_failure', 'no_progress_streak') AND m.ns >= {OUTLIER_SESSIONS} AND m.med > 0
   AND s.n_turns > {OUTLIER_X} * m.med
-GROUP BY g.file, s.project;
+GROUP BY g.file, s.project
+HAVING count(*) >= {OUTLIER_LOOPS};
 """
 
 
